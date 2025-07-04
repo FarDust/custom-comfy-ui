@@ -17,4 +17,5 @@ WORKDIR ${ROOT}
 COPY config/extra_model_paths.yaml ${ROOT}/extra_model_paths.yaml
 
 ENV NVIDIA_VISIBLE_DEVICES=all PYTHONPATH="${PYTHONPATH}:${PWD}" CLI_ARGS=""
-CMD python -u main.py --listen --port 7860 ${CLI_ARGS}
+
+ENTRYPOINT ["python", "-u", "main.py", "--listen", "--port", "7860"]
