@@ -38,35 +38,19 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-
-    - name: Install dependencies
-      run: npm ci
-
     - name: Determine version and tag
       id: version
       run: |
-        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          # Tag-based versioning (for manual releases)
-          tag_name=${GITHUB_REF#refs/tags/}
-          version=${tag_name#v}
-          tag=$tag_name
-        else
-          # Branch-based versioning
-          branch_name=${GITHUB_REF#refs/heads/}
-          
-          # For other branches, use branch name with timestamp
-          version="0.0.0-$branch_name"
-          tag="branch-$branch_name-$(date +%Y%m%d-%H%M%S)"
-        fi
+        # Get branch name
+        branch_name=${GITHUB_REF#refs/heads/}
+        
+        # Generate Docker-specific versioning with timestamp
+        timestamp=$(date +%Y%m%d-%H%M%S)
+        short_sha=${GITHUB_SHA::8}
+        
+        # All branches in this workflow get branch-specific versioning
+        version="0.0.0-${branch_name}.${timestamp}"
+        tag="${branch_name}-${timestamp}"
         
         echo "version=$version" >> $GITHUB_OUTPUT
         echo "tag=$tag" >> $GITHUB_OUTPUT
