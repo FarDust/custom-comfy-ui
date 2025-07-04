@@ -1,0 +1,112 @@
+name: Reusable Docker Build
+
+on:
+  workflow_call:
+    inputs:
+      dockerfile:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+      registry:
+        required: false
+        type: string
+        default: 'us-central1-docker.pkg.dev'
+      repository:
+        required: false
+        type: string
+        default: 'landing-fardust/public-docker'
+    secrets:
+      WIF_PROVIDER:
+        required: true
+      GCP_SA_EMAIL:
+        required: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Google Auth
+      id: auth
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+        service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Configure Docker for Artifact Registry
+      run: |
+        gcloud auth configure-docker ${{ inputs.registry }}
+
+    - name: Determine image name
+      id: image-name
+      run: |
+        # Extract directory name from Dockerfile path (e.g., "images/comfyui" -> "comfyui")
+        dir_name=$(dirname "${{ inputs.dockerfile }}" | sed 's|^images/||')
+        if [ "$dir_name" = "images" ]; then
+          dir_name="default"
+        fi
+        echo "name=$dir_name" >> $GITHUB_OUTPUT
+
+    - name: Generate tags
+      id: tags
+      run: |
+        # Base image name
+        base_name="${{ inputs.registry }}/${{ inputs.repository }}/${{ steps.image-name.outputs.name }}"
+        
+        # Get version and tag from inputs
+        version="${{ inputs.version }}"
+        tag="${{ inputs.tag }}"
+        
+        # Initialize tags array
+        tags=()
+        
+        # Semantic versioning tags
+        tags+=("$base_name:$version")
+        tags+=("$base_name:latest")
+        
+        # Major and minor version tags
+        if [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          tags+=("$base_name:$major")
+          tags+=("$base_name:$minor")
+        fi
+        
+        # Git tag
+        tags+=("$base_name:$tag")
+        
+        # Join tags with comma
+        tags_str=$(IFS=','; echo "${tags[*]}")
+        echo "tags=$tags_str" >> $GITHUB_OUTPUT
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ${{ inputs.dockerfile }}
+        push: true
+        tags: ${{ steps.tags.outputs.tags }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+
+    - name: Output image info
+      run: |
+        echo "Built and pushed image: ${{ steps.image-name.outputs.name }}"
+        echo "Version: ${{ inputs.version }}"
+        echo "Tags: ${{ steps.tags.outputs.tags }}"
+        echo "Registry: ${{ inputs.registry }}/${{ inputs.repository }}" 

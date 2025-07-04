@@ -1,0 +1,211 @@
+name: Deploy to GCP Artifact Registry
+
+on:
+  push:
+    branches: [ main, master, develop, staging, release/* ]
+  pull_request:
+    branches: [ main, master, develop, staging ]
+
+env:
+  REGISTRY: us-central1-docker.pkg.dev
+  REPOSITORY: landing-fardust/public-docker
+
+jobs:
+  discover-dockerfiles:
+    runs-on: ubuntu-latest
+    outputs:
+      dockerfiles: ${{ steps.get-dockerfiles.outputs.files }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Get Dockerfiles
+      id: get-dockerfiles
+      run: |
+        # Find all Dockerfiles in the images directory
+        dockerfiles=$(find images -name "Dockerfile" -type f | jq -R -s -c 'split("\n")[:-1]')
+        echo "files=$dockerfiles" >> $GITHUB_OUTPUT
+
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+    - name: Determine version and tag
+      id: version
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          # Tag-based versioning (for manual releases)
+          tag_name=${GITHUB_REF#refs/tags/}
+          version=${tag_name#v}
+          tag=$tag_name
+        else
+          # Branch-based versioning
+          branch_name=${GITHUB_REF#refs/heads/}
+          
+          # For main/master, use semantic versioning
+          if [[ "$branch_name" == "main" || "$branch_name" == "master" ]]; then
+            # Use commit SHA for version to ensure uniqueness
+            short_sha=${GITHUB_SHA::8}
+            version="0.0.0-$short_sha"
+            tag="main-$short_sha"
+          else
+            # For other branches, use branch name
+            version="0.0.0-$branch_name"
+            tag="branch-$branch_name"
+          fi
+        fi
+        
+        echo "version=$version" >> $GITHUB_OUTPUT
+        echo "tag=$tag" >> $GITHUB_OUTPUT
+
+  build-images:
+    needs: [discover-dockerfiles, determine-version]
+    strategy:
+      matrix:
+        dockerfile: ${{ fromJSON(needs.discover-dockerfiles.outputs.dockerfiles) }}
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      dockerfile: ${{ matrix.dockerfile }}
+      version: ${{ needs.determine-version.outputs.version }}
+      tag: ${{ needs.determine-version.outputs.tag }}
+    secrets:
+      WIF_PROVIDER: ${{ secrets.WIF_PROVIDER }}
+      GCP_SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
+
+  build-and-push:
+    needs: build-images
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dockerfile: ${{ fromJSON(needs.build-images.outputs.dockerfiles) }}
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Google Auth
+      id: auth
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+        service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Configure Docker for Artifact Registry
+      run: |
+        gcloud auth configure-docker $REGISTRY
+
+    - name: Determine image name
+      id: image-name
+      run: |
+        # Extract directory name from Dockerfile path (e.g., "images/comfyui" -> "comfyui")
+        dir_name=$(dirname "${{ matrix.dockerfile }}" | sed 's|^images/||')
+        if [ "$dir_name" = "images" ]; then
+          dir_name="default"
+        fi
+        echo "name=$dir_name" >> $GITHUB_OUTPUT
+
+    - name: Generate tags
+      id: tags
+      run: |
+        # Base image name
+        base_name="${{ env.REGISTRY }}/${{ env.REPOSITORY }}/${{ steps.image-name.outputs.name }}"
+        
+        # Initialize tags array
+        tags=()
+        
+        # Branch-based tags
+        if [[ "${{ github.ref }}" == refs/heads/* ]]; then
+          branch_name=${GITHUB_REF#refs/heads/}
+          
+          # Main/master branch gets 'latest' tag
+          if [[ "$branch_name" == "main" || "$branch_name" == "master" ]]; then
+            tags+=("$base_name:latest")
+            tags+=("$base_name:main")
+          fi
+          
+          # Develop branch gets 'develop' tag
+          if [[ "$branch_name" == "develop" ]]; then
+            tags+=("$base_name:develop")
+          fi
+          
+          # Staging branch gets 'staging' tag
+          if [[ "$branch_name" == "staging" ]]; then
+            tags+=("$base_name:staging")
+          fi
+          
+          # Release branches get 'release-{version}' tag
+          if [[ "$branch_name" =~ ^release/(.+)$ ]]; then
+            version=${BASH_REMATCH[1]}
+            tags+=("$base_name:release-$version")
+          fi
+          
+          # All branches get branch-specific tag
+          tags+=("$base_name:$branch_name")
+        fi
+        
+        # Tag-based versioning
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          tag_name=${GITHUB_REF#refs/tags/}
+          
+          # Remove 'v' prefix if present
+          version=${tag_name#v}
+          
+          # Semantic versioning tags
+          tags+=("$base_name:$version")
+          tags+=("$base_name:latest")
+          
+          # Major and minor version tags
+          if [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+            tags+=("$base_name:$major")
+            tags+=("$base_name:$minor")
+          fi
+        fi
+        
+        # PR tags
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          pr_number="${{ github.event.number }}"
+          tags+=("$base_name:pr-$pr_number")
+        fi
+        
+        # SHA tag for all builds
+        short_sha=${GITHUB_SHA::8}
+        tags+=("$base_name:sha-$short_sha")
+        
+        # Join tags with comma for docker/metadata-action
+        tags_str=$(IFS=','; echo "${tags[*]}")
+        echo "tags=$tags_str" >> $GITHUB_OUTPUT
+        
+        # Also output as JSON array for build-push-action
+        tags_json=$(printf '%s\n' "${tags[@]}" | jq -R . | jq -s .)
+        echo "tags_json=$tags_json" >> $GITHUB_OUTPUT
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ${{ matrix.dockerfile }}
+        push: true
+        tags: ${{ steps.tags.outputs.tags }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+
+    - name: Output image info
+      run: |
+        echo "Built and pushed image: ${{ steps.image-name.outputs.name }}"
+        echo "Tags: ${{ steps.tags.outputs.tags }}"
+        echo "Registry: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}" 
