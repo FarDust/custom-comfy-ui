@@ -1,0 +1,19 @@
+{
+  "name": "custom-comfy-ui",
+  "version": "0.0.0-development",
+  "description": "Custom ComfyUI Docker images with automated semantic releases",
+  "private": true,
+  "scripts": {
+    "release": "semantic-release"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.0",
+    "@semantic-release/git": "^10.0.0",
+    "@semantic-release/github": "^8.0.0",
+    "@semantic-release/npm": "^8.0.0",
+    "semantic-release": "^21.0.0"
+  },
+  "release": {
+    "branches": ["main", "master"]
+  }
+} 
