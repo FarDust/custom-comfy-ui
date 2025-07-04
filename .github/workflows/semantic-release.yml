@@ -70,10 +70,9 @@ jobs:
           echo "published=false" >> $GITHUB_OUTPUT
         fi
 
-  # Only build images if a new release was published
+  # Always build images on main branch
   discover-dockerfiles:
     needs: semantic-release
-    if: needs.semantic-release.outputs.published == 'true'
     runs-on: ubuntu-latest
     outputs:
       dockerfiles: ${{ steps.get-dockerfiles.outputs.files }}
@@ -88,17 +87,59 @@ jobs:
         dockerfiles=$(find images -name "Dockerfile" -type f | jq -R -s -c 'split("\n")[:-1]')
         echo "files=$dockerfiles" >> $GITHUB_OUTPUT
 
+  determine-version:
+    needs: semantic-release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Determine version and tag
+      id: version
+      run: |
+        if [ "${{ needs.semantic-release.outputs.published }}" = "true" ]; then
+          # Use semantic release version if a new release was published
+          version="${{ needs.semantic-release.outputs.version }}"
+          tag="${{ needs.semantic-release.outputs.tag }}"
+        else
+          # Use current package.json version with dev suffix for non-release builds
+          current_version=$(node -p "require('./package.json').version" 2>/dev/null || echo "0.0.0")
+          if [[ "$current_version" == *"-"* ]]; then
+            # Already a development version
+            version="$current_version"
+          else
+            # Add dev suffix
+            version="${current_version}-dev"
+          fi
+          tag="main-$(date +%Y%m%d-%H%M%S)"
+        fi
+        
+        echo "version=$version" >> $GITHUB_OUTPUT
+        echo "tag=$tag" >> $GITHUB_OUTPUT
+
   build-images:
-    needs: [semantic-release, discover-dockerfiles]
-    if: needs.semantic-release.outputs.published == 'true'
+    needs: [discover-dockerfiles, determine-version]
     strategy:
       matrix:
         dockerfile: ${{ fromJSON(needs.discover-dockerfiles.outputs.dockerfiles) }}
     uses: ./.github/workflows/reusable-build.yml
     with:
       dockerfile: ${{ matrix.dockerfile }}
-      version: ${{ needs.semantic-release.outputs.version }}
-      tag: ${{ needs.semantic-release.outputs.tag }}
+      version: ${{ needs.determine-version.outputs.version }}
+      tag: ${{ needs.determine-version.outputs.tag }}
     secrets:
       WIF_PROVIDER: ${{ secrets.WIF_PROVIDER }}
       GCP_SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }} 
