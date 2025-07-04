@@ -115,19 +115,7 @@ jobs:
         echo "Tags: ${{ steps.tags.outputs.tags }}"
         echo "Registry: ${{ inputs.registry }}/${{ inputs.repository }}"
 
-    - name: Save Docker image as artifact
-      run: |
-        # Save the image as a tar file for backup/transfer
-        docker pull ${{ inputs.registry }}/${{ inputs.repository }}/${{ steps.image-name.outputs.name }}:${{ inputs.version }}
-        docker save ${{ inputs.registry }}/${{ inputs.repository }}/${{ steps.image-name.outputs.name }}:${{ inputs.version }} -o ${{ steps.image-name.outputs.name }}-${{ inputs.version }}.tar
-        gzip ${{ steps.image-name.outputs.name }}-${{ inputs.version }}.tar
 
-    - name: Upload Docker image artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: docker-image-${{ steps.image-name.outputs.name }}-${{ inputs.version }}
-        path: ${{ steps.image-name.outputs.name }}-${{ inputs.version }}.tar.gz
-        retention-days: 30
 
     - name: Save build metadata
       run: |
