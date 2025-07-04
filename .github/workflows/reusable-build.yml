@@ -113,4 +113,43 @@ jobs:
         echo "Built and pushed image: ${{ steps.image-name.outputs.name }}"
         echo "Version: ${{ inputs.version }}"
         echo "Tags: ${{ steps.tags.outputs.tags }}"
-        echo "Registry: ${{ inputs.registry }}/${{ inputs.repository }}" 
+        echo "Registry: ${{ inputs.registry }}/${{ inputs.repository }}"
+
+    - name: Save Docker image as artifact
+      run: |
+        # Save the image as a tar file for backup/transfer
+        docker pull ${{ inputs.registry }}/${{ inputs.repository }}/${{ steps.image-name.outputs.name }}:${{ inputs.version }}
+        docker save ${{ inputs.registry }}/${{ inputs.repository }}/${{ steps.image-name.outputs.name }}:${{ inputs.version }} -o ${{ steps.image-name.outputs.name }}-${{ inputs.version }}.tar
+        gzip ${{ steps.image-name.outputs.name }}-${{ inputs.version }}.tar
+
+    - name: Upload Docker image artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-image-${{ steps.image-name.outputs.name }}-${{ inputs.version }}
+        path: ${{ steps.image-name.outputs.name }}-${{ inputs.version }}.tar.gz
+        retention-days: 30
+
+    - name: Save build metadata
+      run: |
+        # Create metadata file with build information
+        cat > build-metadata-${{ steps.image-name.outputs.name }}-${{ inputs.version }}.json << EOF
+        {
+          "image_name": "${{ steps.image-name.outputs.name }}",
+          "version": "${{ inputs.version }}",
+          "tag": "${{ inputs.tag }}",
+          "registry": "${{ inputs.registry }}",
+          "repository": "${{ inputs.repository }}",
+          "full_image": "${{ inputs.registry }}/${{ inputs.repository }}/${{ steps.image-name.outputs.name }}:${{ inputs.version }}",
+          "all_tags": "${{ steps.tags.outputs.tags }}",
+          "build_time": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "commit_sha": "${{ github.sha }}",
+          "branch": "${{ github.ref_name }}"
+        }
+        EOF
+
+    - name: Upload build metadata
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-metadata-${{ steps.image-name.outputs.name }}-${{ inputs.version }}
+        path: build-metadata-${{ steps.image-name.outputs.name }}-${{ inputs.version }}.json
+        retention-days: 90 

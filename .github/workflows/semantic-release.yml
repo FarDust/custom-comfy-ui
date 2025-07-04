@@ -65,6 +65,10 @@ jobs:
           echo "version=${{ steps.semantic.outputs.new_release_version }}" >> $GITHUB_OUTPUT
           echo "tag=${{ steps.semantic.outputs.new_release_tag }}" >> $GITHUB_OUTPUT
           echo "published=true" >> $GITHUB_OUTPUT
+          
+          # Generate Docker image links for release notes
+          echo "docker_images=us-central1-docker.pkg.dev/landing-fardust/public-docker/default:${{ steps.semantic.outputs.new_release_version }}" >> $GITHUB_OUTPUT
+          echo "docker_latest=us-central1-docker.pkg.dev/landing-fardust/public-docker/default:latest" >> $GITHUB_OUTPUT
         else
           echo "published=false" >> $GITHUB_OUTPUT
         fi
@@ -137,4 +141,46 @@ jobs:
       tag: ${{ needs.determine-version.outputs.tag }}
     secrets:
       WIF_PROVIDER: ${{ secrets.WIF_PROVIDER }}
-      GCP_SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }} 
+      GCP_SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
+
+    update-release-with-docker:
+    needs: [semantic-release, build-images]
+    if: needs.semantic-release.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download build metadata
+      uses: actions/download-artifact@v4
+      with:
+        name: build-metadata-*-${{ needs.semantic-release.outputs.version }}
+        path: ./metadata
+
+    - name: Update GitHub Release with Docker Images
+      run: |
+        # Get the release ID for the latest release
+        RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/latest --jq '.id')
+        
+        # Get current release body
+        CURRENT_BODY=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID --jq '.body')
+        
+        # Get image name from metadata
+        IMAGE_NAME=$(cat ./metadata/build-metadata-*.json | jq -r '.image_name' | head -1)
+        
+        # Add Docker image information
+        DOCKER_INFO="
+        
+        ## 🐳 Docker Image
+        
+        \`\`\`bash
+        docker pull us-central1-docker.pkg.dev/landing-fardust/public-docker/$IMAGE_NAME:${{ needs.semantic-release.outputs.version }}
+        \`\`\`
+        "
+        
+        # Update the release
+        gh api repos/${{ github.repository }}/releases/$RELEASE_ID \
+          --method PATCH \
+          --field body="$CURRENT_BODY$DOCKER_INFO" 
