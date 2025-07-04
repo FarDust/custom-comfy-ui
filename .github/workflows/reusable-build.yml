@@ -57,7 +57,7 @@ jobs:
         # Extract directory name from Dockerfile path (e.g., "images/comfyui" -> "comfyui")
         dir_name=$(dirname "${{ inputs.dockerfile }}" | sed 's|^images/||')
         if [ "$dir_name" = "images" ]; then
-          dir_name="default"
+          dir_name="comfyui"
         fi
         echo "name=$dir_name" >> $GITHUB_OUTPUT
 
