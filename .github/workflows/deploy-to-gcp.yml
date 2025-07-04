@@ -10,6 +10,10 @@ env:
   REGISTRY: us-central1-docker.pkg.dev
   REPOSITORY: landing-fardust/public-docker
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   discover-dockerfiles:
     runs-on: ubuntu-latest
