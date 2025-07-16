@@ -14,9 +14,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
   git checkout master && \
   pip install -r requirements.txt
 
-RUN comfy node registry-install comfyui-model-manager
-
 WORKDIR ${ROOT}
+
+RUN comfy --skip-prompt node registry-install comfyui-model-manager && \
+  comfy --skip-prompt tracking disable
 
 # Copy the model paths configuration
 COPY config/extra_model_paths.yaml ${ROOT}/extra_model_paths.yaml
