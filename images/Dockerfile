@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y git && apt-get clean
 
 ENV ROOT=/stable-diffusion
 RUN pip install uv
+ENV PATH="/root/.local/bin:$PATH"
 RUN uv tool install comfy-cli
 RUN --mount=type=cache,target=/root/.cache/pip \
   git clone https://github.com/comfyanonymous/ComfyUI.git ${ROOT} && \
