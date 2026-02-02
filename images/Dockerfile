@@ -13,7 +13,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
   cd ${ROOT} && \
   git checkout tags/v0.11.1 && \
   uv pip install --system -r requirements.txt && \
-  uv pip install --system pyav pyhocon sageattention diffusers bitsandbytes
+  uv pip install --system av pyhocon sageattention diffusers bitsandbytes
 
 WORKDIR ${ROOT}
 
