@@ -127,10 +127,23 @@ jobs:
 
 
 
-    - name: Save build metadata
+    - name: Compute safe metadata name
+      id: meta
+      shell: bash
       run: |
-        # Create metadata file with build information
-        cat > build-metadata-${{ steps.image-name.outputs.name }}-${{ inputs.version }}.json << EOF
+        ver="${{ inputs.version }}"
+        safe="$ver"
+        safe="${safe//\//-}"   # / -> -
+        safe="${safe//:/-}"    # : -> -
+        safe="${safe// /_}"    # espacios -> _
+        echo "safe_version=$safe" >> "$GITHUB_OUTPUT"
+
+    - name: Save build metadata
+      shell: bash
+      run: |
+        file="build-metadata-${{ steps.image-name.outputs.name }}-${{ steps.meta.outputs.safe_version }}.json"
+    
+        cat > "$file" << EOF
         {
           "image_name": "${{ steps.image-name.outputs.name }}",
           "version": "${{ inputs.version }}",
@@ -144,10 +157,10 @@ jobs:
           "branch": "${{ github.ref_name }}"
         }
         EOF
-
+    
     - name: Upload build metadata
       uses: actions/upload-artifact@v4
       with:
-        name: build-metadata-${{ steps.image-name.outputs.name }}-${{ inputs.version }}
-        path: build-metadata-${{ steps.image-name.outputs.name }}-${{ inputs.version }}.json
-        retention-days: 90 
+        name: build-metadata-${{ steps.image-name.outputs.name }}-${{ steps.meta.outputs.safe_version }}
+        path: build-metadata-${{ steps.image-name.outputs.name }}-${{ steps.meta.outputs.safe_version }}.json
+        retention-days: 90
