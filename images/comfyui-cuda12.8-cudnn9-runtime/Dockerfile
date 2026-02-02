@@ -12,7 +12,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
   git clone https://github.com/comfyanonymous/ComfyUI.git ${ROOT} && \
   cd ${ROOT} && \
   git checkout tags/v0.11.1 && \
-  uv pip install --system -r requirements.txt pyav pyhocon sageattention diffusers bitsandbytes
+  uv pip install --system -r requirements.txt && \
+  uv pip install --system pyav pyhocon sageattention diffusers bitsandbytes
 
 WORKDIR ${ROOT}
 
