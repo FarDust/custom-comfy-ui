@@ -67,9 +67,19 @@ jobs:
         # Base image name
         base_name="${{ inputs.registry }}/${{ inputs.repository }}/${{ steps.image-name.outputs.name }}"
         
-        # Get version and tag from inputs
-        version="${{ inputs.version }}"
-        tag="${{ inputs.tag }}"
+        sanitize_tag () {
+          # Docker tag charset: [a-zA-Z0-9_.-] (no slashes/spaces). Keep it safe.
+          local t="$1"
+          t="$(echo "$t" | tr '[:upper:]' '[:lower:]')"
+          t="$(echo "$t" | sed -E 's#[^a-z0-9_.-]+#-#g; s/^-+//; s/-+$//; s/-+/-/g')"
+          echo "${t:0:128}"
+        }
+
+        version_raw="${{ inputs.version }}"
+        tag_raw="${{ inputs.tag }}"
+
+        version="$(sanitize_tag "$version_raw")"
+        tag="$(sanitize_tag "$tag_raw")"
         
         # Initialize tags array
         tags=()
