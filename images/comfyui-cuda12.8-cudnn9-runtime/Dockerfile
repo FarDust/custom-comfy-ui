@@ -2,7 +2,7 @@ FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive PIP_PREFER_BINARY=1
 
-RUN apt-get update && apt-get install -y git && apt-get clean
+RUN apt-get update && apt-get install -y git libgl1-mesa-glx build-essential cmake && apt-get clean
 
 ENV ROOT=/stable-diffusion
 RUN pip install uv
@@ -11,8 +11,8 @@ RUN uv pip install --system comfy-cli
 RUN --mount=type=cache,target=/root/.cache/pip \
   git clone https://github.com/comfyanonymous/ComfyUI.git ${ROOT} && \
   cd ${ROOT} && \
-  git checkout master && \
-  pip install -r requirements.txt
+  git checkout tags/v0.11.1 && \
+  uv pip install --system -r requirements.txt pyav pyhocon sageattention diffusers bitsandbytes
 
 WORKDIR ${ROOT}
 
