@@ -33,7 +33,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     uv pip install --system \
       -r requirements.txt \
       av pyhocon sageattention diffusers bitsandbytes \
-      omegaconf opencv-python-headless
+      omegaconf opencv-python-headless \
+      plyfile ftfy scikit-image
+
 
 WORKDIR ${ROOT}
 
